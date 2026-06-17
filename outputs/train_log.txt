@@ -1,0 +1,6 @@
+=== fsrcnn x2 ===
+[fsrcnn_x2_l1] device=mps
+params=12,809  imgs_train=91
+ep   10  loss 0.02410  Set5 PSNR 30.716 SSIM 0.9100  <- best
+ep   20  loss 0.01932  Set5 PSNR 33.717 SSIM 0.9407  <- best
+ep   30  loss 0.01801  Set5 PSNR 34.815 SSIM 0.9464  <- best
