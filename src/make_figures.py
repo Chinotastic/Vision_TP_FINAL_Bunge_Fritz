@@ -58,7 +58,7 @@ def eval_baseline(name, scale, method):
     return float(np.mean(ps)), float(np.mean(ss))
 
 
-def build_tables(scales, testsets):
+def build_tables(scales, testsets, se_match=()):
     lines = ["# Resultados — PSNR / SSIM (canal Y, con shave)\n"]
     for scale in scales:
         lines.append(f"\n## Factor x{scale}\n")
@@ -79,6 +79,13 @@ def build_tables(scales, testsets):
                 p, s = eval_model(m, t, scale, DEVICE)
                 cells += [f"{p:.2f}", f"{s:.4f}"]
             rows.append((tag, cells, True))
+            # Fila extra con self-ensemble para los modelos pedidos (p.ej. fsrcnn_res)
+            if any(sm in tag for sm in se_match):
+                cells_se = []
+                for t in testsets:
+                    p, s = eval_model(m, t, scale, DEVICE, self_ensemble=True)
+                    cells_se += [f"{p:.2f}", f"{s:.4f}"]
+                rows.append((tag + " +SE", cells_se, True))
         for name, cells, bold in rows:
             nm = f"**{name}**" if bold else name
             vals = " | ".join(f"**{c}**" if bold else c for c in cells)
@@ -165,9 +172,11 @@ def main():
     ap.add_argument("--scales", nargs="+", type=int, default=[2, 4])
     ap.add_argument("--testsets", nargs="+", default=["Set5", "Set14"])
     ap.add_argument("--panels", nargs="+", type=int, default=[0, 2])
+    ap.add_argument("--se", nargs="*", default=["fsrcnn_res"],
+                    help="substrings de tags que reciben fila extra con self-ensemble")
     args = ap.parse_args()
     print(f"device={DEVICE}")
-    build_tables(args.scales, args.testsets)
+    build_tables(args.scales, args.testsets, se_match=args.se)
     for scale in args.scales:
         make_convergence(scale)
         tags = discover(scale)

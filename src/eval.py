@@ -127,18 +127,76 @@ def sr_from_model(model, lr_rgb, scale, device="cpu"):
     return sr_rgb, y_sr
 
 
+def _se_forward(x, k, flip):
+    """Transformación geométrica: espejo horizontal (opcional) + rot90 k veces."""
+    if flip:
+        x = x[:, ::-1]
+    return np.rot90(x, k)
+
+
+def _se_inverse(x, k, flip):
+    """Deshace _se_forward: rot90 -k y luego el espejo (orden inverso)."""
+    x = np.rot90(x, -k)
+    if flip:
+        x = x[:, ::-1]
+    return x
+
+
+def sr_y_self_ensemble(model, lr_rgb, scale, device="cpu"):
+    """Y super-resuelto con SELF-ENSEMBLE: promedia la salida del modelo sobre las 8
+    transformaciones geométricas (4 rotaciones x espejo on/off). Cada orientación se
+    equivoca distinto; al promediar, los errores se cancelan -> Y más limpio (+0.1-0.3 dB),
+    sin reentrenar. Solo es cómputo de inferencia (8 pasadas por imagen).
+    """
+    import torch
+
+    y, _, _ = rgb2ycbcr(lr_rgb)
+    y = y / 255.0
+    model.eval()
+    acc = None
+    for flip in (False, True):
+        for k in range(4):
+            t = np.ascontiguousarray(_se_forward(y, k, flip)).astype(np.float32)
+            with torch.no_grad():
+                out = model(torch.from_numpy(t[None, None]).to(device)).clamp(0, 1)
+            out = out.cpu().numpy()[0, 0]
+            out = _se_inverse(out, k, flip)
+            acc = out if acc is None else acc + out
+    return (acc / 8.0) * 255.0
+
+
+def sr_from_model_se(model, lr_rgb, scale, device="cpu"):
+    """Como sr_from_model pero con self-ensemble en Y (Cb/Cr siguen por bicubic)."""
+    from baselines import upsample_to
+
+    y_sr = sr_y_self_ensemble(model, lr_rgb, scale, device)
+    out_hw = (lr_rgb.shape[0] * scale, lr_rgb.shape[1] * scale)
+    lr_up = upsample_to(lr_rgb, out_hw, "bicubic")
+    _, cb_sr, cr_sr = rgb2ycbcr(lr_up)
+    h = min(y_sr.shape[0], cb_sr.shape[0])
+    w = min(y_sr.shape[1], cb_sr.shape[1])
+    y_sr, cb_sr, cr_sr = y_sr[:h, :w], cb_sr[:h, :w], cr_sr[:h, :w]
+    return ycbcr2rgb(y_sr, cb_sr, cr_sr), y_sr
+
+
 def _psnr_arr(y1, y2, scale):
     a, b = shave(y1, scale), shave(y2, scale)
     mse = np.mean((a - b) ** 2)
     return float("inf") if mse == 0 else 10.0 * np.log10((255.0 ** 2) / mse)
 
 
-def eval_model(model, name, scale, device="cpu"):
-    """PSNR/SSIM medio de un modelo en Set5/Set14, directo sobre canal Y (con shave)."""
+def eval_model(model, name, scale, device="cpu", self_ensemble=False):
+    """PSNR/SSIM medio de un modelo en Set5/Set14, directo sobre canal Y (con shave).
+
+    self_ensemble=True promedia 8 transformaciones geométricas (más lento, más PSNR).
+    """
     items = load_set(name, scale)
     psnrs, ssims = [], []
     for it in items:
-        _, y_sr = sr_from_model(model, it["lr"], scale, device)
+        if self_ensemble:
+            y_sr = sr_y_self_ensemble(model, it["lr"], scale, device)
+        else:
+            _, y_sr = sr_from_model(model, it["lr"], scale, device)
         y_hr = rgb2y(it["hr"])[:y_sr.shape[0], :y_sr.shape[1]]
         psnrs.append(_psnr_arr(y_sr, y_hr, scale))
         ssims.append(float(_ssim(shave(y_sr, scale), shave(y_hr, scale), data_range=255.0)))

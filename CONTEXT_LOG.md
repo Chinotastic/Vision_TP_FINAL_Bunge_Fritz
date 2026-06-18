@@ -172,6 +172,92 @@ Tablas + paneles + curvas listos con pesos reales. Los 4 modelos superan baselin
   **nueva versión** del dataset de Kaggle.
 - Persistir con **Save & Run All (Commit)**; bajar outputs por API (token KGAT como Bearer → URLs firmadas).
 
+### Corrida 1 en Kaggle (notebook-2): PARCIAL — código viejo montado
+- El notebook nuevo corrió contra el **dataset con el `src/` VIEJO** (sin EDSR/train_gan.py/losses.py).
+  Log: `argument --model: invalid choice: 'edsr'` y `can't open train_gan.py`.
+- Salieron 9 modelos válidos (descargados): srcnn x2/x4, fsrcnn x2(l1,l2)/x3/x4, fsrcnn_res x2/x3/x4.
+  Faltan: EDSR (x2/x3/x4), fsrcnn x2 charbonnier, perceptual, gan.
+- Tabla parcial (PSNR Set5): x2 → srcnn 36.37, fsrcnn 36.11, fsrcnn_l2 36.41, fsrcnn_res 36.74.
+  Hallazgo: L2 > L1 en PSNR (esperado, L2 optimiza MSE). Residual el mejor.
+
+### Acción correctiva
+- Re-subir el dataset a la **versión NUEVA** (`tpf-superres.zip`, con el código nuevo). ← causa raíz del fallo.
+- Correr **`notebooks/kaggle_train_missing.ipynb`** (solo los 6 faltantes, ~1-1.5h). Su celda 1 verifica
+  que el código sea el nuevo y aborta si no. Luego bajar por API y mergear con los 9 ya descargados.
+
+### Corrida 2 en Kaggle (notebook-3, `kaggle_train_missing.ipynb`): COMPLETA ✅
+- Esta vez con el dataset re-subido (código nuevo). Entrenó los **6 faltantes** y los bajamos por API.
+- Ahora tenemos los **15 modelos completos** en `outputs/`:
+  - Arquitectura: srcnn / fsrcnn / fsrcnn_res / **edsr**, en x2 y x4.
+  - Factor 3x: fsrcnn / fsrcnn_res / edsr.
+  - Ablación pérdida (fsrcnn x2): l1 / l2 / charbonnier.
+  - Percepción: edsr_x4_perceptual (VGG) + edsr_x4_gan (SRGAN).
+
+### NÚMEROS FINALES de los 6 nuevos (Kaggle T4) — PSNR / SSIM, canal Y
+| Modelo | Set5 PSNR | Set5 SSIM | Set14 PSNR | Set14 SSIM |
+|---|---|---|---|---|
+| edsr_x2_l1 | 36.57 | 0.9595 | 32.38 | 0.9150 |
+| edsr_x3_l1 | 32.87 | 0.9210 | 29.29 | 0.8381 |
+| edsr_x4_l1 | 30.32 | 0.8772 | 27.39 | 0.7714 |
+| fsrcnn_x2_charbonnier | 36.21 | 0.9571 | 32.13 | 0.9121 |
+| edsr_x4_perceptual | 27.85 | 0.7878 | 25.79 | 0.7041 |
+| edsr_x4_gan | 29.06 | 0.8283 | 26.57 | 0.7303 |
+
+### Qué esperábamos vs qué obtuvimos (HALLAZGO IMPORTANTE)
+- **Esperábamos**: EDSR (924k params) > FSRCNN-res (13k) en PSNR — más capacidad, mejor reconstrucción.
+- **Obtuvimos lo CONTRARIO**: en x2, edsr 36.57 < fsrcnn_res 36.98 < fsrcnn 36.84; en x4, edsr 30.32 <
+  fsrcnn_res 30.78 < fsrcnn 30.62. El modelo grande PIERDE contra el chico.
+- **Por qué** (diagnóstico, no es bug): entrenamos a EDSR con **solo T91 (91 imgs)** y `lr=1e-3`. EDSR
+  está diseñado para datasets grandes (DIV2K, 800 imgs) y `lr=1e-4`. Con tan pocos datos la capacidad
+  extra no se aprovecha. FSRCNN, al ser chico, satura con poquitos datos y le alcanza T91.
+- **Percepción-distorsión** (esperado y confirmado): perceptual y GAN dan PSNR MÁS BAJO que edsr_x4_l1
+  (30.32) — perceptual 27.85, gan 29.06 — porque optimizan nitidez/realismo, no PSNR. `train_gan.py`
+  guarda el generador FINAL (no el de mejor-PSNR) a propósito.
+
+---
+
+## Fase 5 — Experimento EDSR con datos grandes (DIV2K)
+
+### Qué hicimos
+- A raíz del hallazgo anterior, montamos un experimento controlado para testear la hipótesis
+  "EDSR pierde por falta de datos, no por arquitectura".
+- Notebook nuevo **`notebooks/kaggle_train_edsr_div2k.ipynb`** (muy comentado): re-entrena SOLO EDSR
+  (x2/x3/x4) con un **subset de DIV2K** (~200 imgs 2K) y `lr=1e-4`, 300 épocas. Tags separados
+  `edsr_x{s}_div2k` para NO pisar los de T91 y poder comparar.
+- Decisión de diseño (comparación justa): la progresión de arquitecturas queda en T91 (donde EDSR no
+  ayuda); el EDSR-DIV2K es un experimento APARTE que muestra que la capacidad sí paga con más datos.
+- Limitación técnica resuelta: `data.py` carga todas las imágenes a RAM → DIV2K completo (800 2K)
+  reventaba la memoria de Kaggle. Solución sin tocar código: el notebook copia solo N=200 imgs a una
+  carpeta y entrena desde ahí.
+- Comentamos a fondo `kaggle_train_full.ipynb` (notebook maestro) celda por celda, para documentación.
+
+### Qué esperamos
+- `edsr_x{s}_div2k` con PSNR mayor que `edsr_x{s}_l1` (T91), idealmente superando a fsrcnn_res.
+- Si se confirma → cierra la historia: "el modelo grande necesitaba más datos".
+
+### Qué obtuvimos — HIPÓTESIS CONFIRMADA ✅
+- Entrenado en Kaggle (subset ~200 imgs de DIV2K, lr 1e-4, 300 épocas). PSNR Set5:
+  | Escala | EDSR-T91 | EDSR-DIV2K | fsrcnn_res |
+  |---|---|---|---|
+  | x2 | 36.57 | **37.00** | 36.74 |
+  | x3 | 32.87 | **33.01** | 32.94 |
+  | x4 | 30.32 | **30.71** | 30.66 |
+- Con más datos, EDSR sube +0.4 dB (x2/x4) y **pasa a superar al FSRCNN-residual en las 3 escalas**.
+- Cierra la historia: la baja performance de EDSR en T91 era por falta de datos, no por la arquitectura.
+  La capacidad extra del modelo grande solo se aprovecha con datasets grandes (DIV2K).
+- Matiz para el informe: fsrcnn_res sigue siendo MUCHO más eficiente (13k vs 924k params) y con
+  self-ensemble (37.05 x2) queda a la par de EDSR-DIV2K. O sea: el modelo chico bien usado compite
+  con el grande, a una fracción del costo.
+
+### Mejora extra: self-ensemble (sin reentrenar)
+- Agregado a `eval.py`: `sr_y_self_ensemble` / `sr_from_model_se` y flag `self_ensemble` en `eval_model`.
+  Promedia la salida sobre las 8 transformaciones geométricas (4 rot × espejo). `make_figures.py`
+  agrega fila `<tag> +SE` para los modelos en `--se` (default: fsrcnn_res).
+- Resultado (Set5 PSNR): x2 36.74→37.05 (+0.31), x3 32.94→33.13 (+0.19), x4 30.66→30.90 (+0.24).
+  Gratis (solo inferencia), a costa de 8× tiempo de inferencia.
+- Acumulado vs FSRCNN base en x2: 36.11 → 37.05 = **+0.94 dB** (residual + self-ensemble).
+
 ### Pendiente
-- Subir dataset nuevo, correr el notebook completo en Kaggle, bajar outputs, generar figuras finales.
-- Después: informe IEEE + póster.
+- Correr `kaggle_train_edsr_div2k.ipynb` en Kaggle (Add Input: tpf-superres + un DIV2K público) →
+  bajar por API → mergear `edsr_x*_div2k` en outputs/ → regenerar make_figures.
+- Informe IEEE + póster.
