@@ -258,6 +258,39 @@ Tablas + paneles + curvas listos con pesos reales. Los 4 modelos superan baselin
 - Acumulado vs FSRCNN base en x2: 36.11 → 37.05 = **+0.94 dB** (residual + self-ensemble).
 
 ### Pendiente
-- Correr `kaggle_train_edsr_div2k.ipynb` en Kaggle (Add Input: tpf-superres + un DIV2K público) →
-  bajar por API → mergear `edsr_x*_div2k` en outputs/ → regenerar make_figures.
-- Informe IEEE + póster.
+- Informe IEEE + póster (todo el material técnico ya está; ver guía abajo).
+
+---
+
+# Guía para el informe — figuras, tablas y números clave
+
+Mapa de qué material usar en cada sección del informe. Las figuras renombradas para el informe
+están en `figures/`; los datos crudos en `outputs/`.
+
+## Figuras (carpeta `figures/`)
+| Archivo | Qué muestra | Sección sugerida |
+|---|---|---|
+| `convergencia_x2.png` / `_x3` / `_x4` | PSNR de validación (Set5) vs época, todos los modelos | Entrenamiento / análisis |
+| `cualitativo_Set5_x2_ej1.png` … `_x4_ej2` | LR \| bicubic \| modelos \| GT con PSNR (2 ejemplos por escala) | Resultados cualitativos |
+| `percepcion_distorsion_x4.png` | Bicubic \| mejor-PSNR \| GAN \| GT (trade-off) | Percepción vs distorsión |
+| `eficiencia_x2.png` / `_x3` / `_x4` | scatter calidad (PSNR) vs latencia (ms/img) | Eficiencia |
+
+## Tablas (carpeta `outputs/`)
+| Archivo | Contenido | Sección |
+|---|---|---|
+| `tables.md` | PSNR/SSIM de baselines + todos los modelos, por escala y testset (Set5/Set14/BSD100/Urban100); incluye filas `+SE` | Resultados cuantitativos |
+| `bench.md` | params / ms-img / FPS por modelo | Eficiencia |
+| `comparacion_final.md` | modelo chico vs EDSR (T91 y DIV2K): PSNR + costo | Discusión / conclusión |
+
+## Números clave (PSNR Set5, dB)
+- **Targets de la consigna**: 34 (x2) / 31 (x3) / 29 (x4). Bicubic: 33.68 / 30.41 / 28.43.
+- **Mejor modelo (FSRCNN-residual)**: 36.74 / 32.94 / 30.66 → con self-ensemble: **37.05 / 33.13 / 30.90**.
+- **Mejora propia vs FSRCNN base** (x2): 36.11 → 36.74 (residual) → 37.05 (+ self-ensemble) = **+0.94 dB**.
+- **EDSR (924k params)**: con T91 PIERDE (36.57 / 32.87 / 30.32); con DIV2K supera al chico básico
+  (37.00 / 33.01 / 30.71) pero NO al chico + self-ensemble.
+
+## Hilos narrativos (para discusión)
+1. **Mejora propia (residual)**: predecir el residuo sobre bicubic converge mejor y sube PSNR; gana en las 3 escalas.
+2. **Capacidad vs datos**: EDSR solo aprovecha sus parámetros con DIV2K; con T91 el modelo chico le gana.
+3. **Calidad vs costo**: el chico + self-ensemble iguala a EDSR-DIV2K con ~70x menos parámetros (trade-off velocidad).
+4. **Percepción vs distorsión**: perceptual/GAN bajan PSNR a propósito a cambio de nitidez.

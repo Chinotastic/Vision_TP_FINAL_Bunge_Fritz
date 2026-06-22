@@ -6,3 +6,8 @@ datasets/
 
 __pycache__/
 .ipynb_checkpoints/
+# LaTeX build
+*.aux
+*.log
+*.out
+*.synctex.gz

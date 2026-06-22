@@ -36,7 +36,8 @@ src/                 código fuente (modelos, entrenamiento, evaluación)
 notebooks/
   resultados.ipynb        notebook definitivo por fases: gate, tablas, figuras,
                           comparación calidad-vs-costo y demo (lee outputs/)
-outputs/             pesos entrenados (best.pth), curvas, tablas (.md) y figuras
+outputs/             pesos entrenados (best.pth), curvas, tablas (.md) y figuras crudas
+figures/             figuras renombradas para el informe (curvas, cualitativos, eficiencia)
 docs/                consignas del TP (PDFs)
 datasets/            T91 (train) + Set5/Set14/BSD100/Urban100 (test) — no versionado
 CONTEXT_LOG.md       bitácora de desarrollo por fases (qué hicimos / esperábamos / obtuvimos)
